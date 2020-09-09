@@ -2,7 +2,7 @@
 
 import gym
 from gym import spaces
-from gym.envs.classic_control import rendering
+# from gym.envs.classic_control import rendering
 import pyglet
 from pyglet import gl
 import numpy as np

@@ -3,6 +3,8 @@
 import argparse
 import othello
 import simple_policies
+from dqn import DQN
+from ppo import PPO
 
 
 def create_policy(policy_type='rand', board_size=8, seed=0, search_depth=1):
@@ -12,8 +14,13 @@ def create_policy(policy_type='rand', board_size=8, seed=0, search_depth=1):
         policy = simple_policies.GreedyPolicy()
     elif policy_type == 'maximin':
         policy = simple_policies.MaxiMinPolicy(search_depth)
-    else:
+    elif policy_type == 'human':
         policy = simple_policies.HumanPolicy(board_size)
+    elif policy_type == 'dqn':
+        policy = DQN('dqn', board_size)
+    elif policy_type == 'ppo':
+        policy = PPO('ppo', board_size)
+
     return policy
 
 
@@ -73,7 +80,9 @@ def play(protagonist,
         done = False
         while not done:
             action = protagonist_policy.get_action(obs)
-            obs, reward, done, _ = env.step(action)
+            next_obs, reward, done, _ = env.step(action)
+            protagonist_policy.run(obs, action, reward, done, next_obs)
+            obs = next_obs
             if render:
                 env.render()
             if done:
@@ -81,18 +90,27 @@ def play(protagonist,
                 if num_disk_as_reward:
                     total_disks = board_size ** 2
                     if protagonist == 1:
-                        white_cnts = reward
+                        white_cnts = (total_disks + reward) / 2
                         black_cnts = total_disks - white_cnts
+
+                        if white_cnts > black_cnts:
+                            win_cnts += 1
+                        elif white_cnts == black_cnts:
+                            draw_cnts += 1
+                        else:
+                            lose_cnts += 1
+
                     else:
-                        black_cnts = reward
+                        black_cnts = (total_disks + reward) / 2
                         white_cnts = total_disks - black_cnts
 
-                    if white_cnts > black_cnts:
-                        win_cnts += 1
-                    elif white_cnts == black_cnts:
-                        draw_cnts += 1
-                    else:
-                        lose_cnts += 1
+                        if black_cnts > white_cnts:
+                            win_cnts += 1
+                        elif white_cnts == black_cnts:
+                            draw_cnts += 1
+                        else:
+                            lose_cnts += 1
+
                 else:
                     if reward == 1:
                         win_cnts += 1
@@ -101,8 +119,8 @@ def play(protagonist,
                     else:
                         lose_cnts += 1
                 print('-' * 3)
-    print('#Wins: {}, #Draws: {}, #Loses: {}'.format(
-        win_cnts, draw_cnts, lose_cnts))
+        print('#Wins: {}, #Draws: {}, #Loses: {}'.format(
+            win_cnts, draw_cnts, lose_cnts))
     env.close()
 
 
@@ -110,9 +128,9 @@ if __name__ == '__main__':
     # Parse command line arguments.
     parser = argparse.ArgumentParser()
     parser.add_argument('--protagonist', default='rand',
-                        choices=['rand', 'greedy', 'maximin', 'human'])
+                        choices=['rand', 'greedy', 'maximin', 'human', 'dqn', 'ppo'])
     parser.add_argument('--opponent', default='rand',
-                        choices=['rand', 'greedy', 'maximin', 'human'])
+                        choices=['rand', 'greedy', 'maximin', 'human', 'dqn', 'ppo'])
     parser.add_argument('--protagonist-plays-white', default=False,
                         action='store_true')
     parser.add_argument('--num-disk-as-reward', default=False,
