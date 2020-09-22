@@ -2,7 +2,7 @@
 
 import gym
 from gym import spaces
-# from gym.envs.classic_control import rendering
+from gym.envs.classic_control import rendering
 import pyglet
 from pyglet import gl
 import numpy as np
@@ -17,6 +17,78 @@ MAX_INT = (1 << 31)
 WINDOW_H = 480
 WINDOW_W = 480
 BOARDFIELD = 480
+
+class SimpleOthelloEnv(gym.Env):
+    """Wrapper of OthelloBaseEnv."""
+
+    metadata = {'render.modes': ['np_array', 'human']}
+
+    def __init__(self,
+                 board_size=8,
+                 initial_rand_steps=0,
+                 seed=0,
+                 sudden_death_on_invalid_move=True,
+                 render_in_step=False,
+                 num_disk_as_reward=False,
+                 possible_actions_in_obs=False):
+
+        # Create the inner environment.
+        self.board_size = board_size
+        self.num_disk_as_reward = num_disk_as_reward
+        self.env = OthelloBaseEnv(
+            board_size=board_size,
+            num_disk_as_reward=self.num_disk_as_reward,
+            sudden_death_on_invalid_move=sudden_death_on_invalid_move,
+            possible_actions_in_obs=possible_actions_in_obs,
+        )
+        self.observation_space = self.env.observation_space
+        self.action_space = self.env.action_space
+        self.render_in_step = render_in_step
+        self.initial_rand_steps = initial_rand_steps
+        self.rand_seed = seed
+        self.rnd = np.random.RandomState(seed=self.rand_seed)
+        self.max_rand_steps = 0
+        self.rand_step_cnt = 0
+
+    def seed(self, seed=None):
+        if seed is not None:
+            self.rand_seed = seed
+            self.rnd = np.random.RandomState(seed=self.rand_seed)
+            # if self.opponent is not None and hasattr(self.opponent, 'seed'):
+            #     self.opponent.seed(self.rand_seed)
+
+    def reset(self):
+        obs = self.env.reset()
+        self.max_rand_steps = self.rnd.randint(
+            low=0, high=self.initial_rand_steps // 2 + 1) * 2
+        self.rand_step_cnt = 0
+        print('The initial {} steps will be random'.format(self.max_rand_steps))
+        return obs
+
+    def step(self, action):
+        if self.rand_step_cnt < self.max_rand_steps:
+            ix = self.rnd.randint(0, len(self.possible_moves))
+            action = self.possible_moves[ix]
+            self.rand_step_cnt += 1
+
+        obs, reward, done, _ = self.env.step(action)  # My move.
+        if self.render_in_step:# and player_turn == self.protagonist:
+            self.render()
+        return obs, reward, done, None
+
+    def render(self, mode='human', close=False):
+        self.env.render(mode=mode, close=close)
+
+    def close(self):
+        self.env.close()
+
+    @property
+    def player_turn(self):
+        return self.env.player_turn
+
+    @property
+    def possible_moves(self):
+        return self.env.possible_moves
 
 
 class OthelloEnv(gym.Env):
@@ -60,6 +132,12 @@ class OthelloEnv(gym.Env):
             self.opponent = white_policy
         else:
             self.opponent = black_policy
+
+    def switch_color(self):
+        if self.protagonist == BLACK_DISK:
+            self.protagonist = WHITE_DISK
+        else:
+            self.protagonist = BLACK_DISK
 
     def seed(self, seed=None):
         if seed is not None:
@@ -431,7 +509,6 @@ class OthelloBaseEnv(gym.Env):
     def show_gui_board(self):
         if self.viewer is None:
             self.viewer = rendering.Viewer(WINDOW_W, WINDOW_H)
-
         win = self.viewer.window
         win.switch_to()
         win.dispatch_events()

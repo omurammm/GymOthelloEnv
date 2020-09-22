@@ -5,6 +5,7 @@ import othello
 import simple_policies
 from dqn import DQN
 from ppo import PPO
+import numpy as np
 
 
 def create_policy(policy_type='rand', board_size=8, seed=0, search_depth=1):
@@ -72,8 +73,16 @@ def play(protagonist,
 
     win_cnts = draw_cnts = lose_cnts = 0
     for i in range(num_rounds):
+        switch = np.random.randint(2)
+        if switch:
+            protagonist = protagonist * -1
+            env.switch_color()
         print('Episode {}'.format(i + 1))
+        pcolor = 'BLACK' if protagonist == -1 else 'WHITE'
+        print('Protagonist is {}'.format(pcolor))
+
         obs = env.reset()
+        obs = obs * protagonist
         protagonist_policy.reset(env)
         if render:
             env.render()
@@ -82,10 +91,11 @@ def play(protagonist,
             action = protagonist_policy.get_action(obs)
             next_obs, reward, done, _ = env.step(action)
             protagonist_policy.run(obs, action, reward, done, next_obs)
-            obs = next_obs
+            obs = next_obs * protagonist
             if render:
                 env.render()
             if done:
+                # print(obs)
                 print('reward={}'.format(reward))
                 if num_disk_as_reward:
                     total_disks = board_size ** 2

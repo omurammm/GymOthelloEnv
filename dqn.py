@@ -18,7 +18,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
 from torch.autograd import Variable
-
+from torch.utils.tensorboard import SummaryWriter
 
 from SumTree import SumTree
 
@@ -81,11 +81,11 @@ class DQN(nn.Module):
             num_actions: number of action-value to output, one-to-one correspondence to action in game.
         """
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, stride=4, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=2, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=2, stride=1)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=2, stride=1)
-        self.fc4 = nn.Linear(64, 512)
-        self.fc5 = nn.Linear(512, num_actions)
+        self.fc4 = nn.Linear(256, 128)
+        self.fc5 = nn.Linear(128, num_actions)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -99,20 +99,19 @@ class Dueling_DQN(nn.Module):
         super(Dueling_DQN, self).__init__()
         self.num_actions = num_actions
 
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=3, stride=4, padding=1)
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2, stride=1)
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=2, stride=1)
 
-        self.fc1_adv = nn.Linear(in_features=64, out_features=512)
-        self.fc1_val = nn.Linear(in_features=64, out_features=512)
+        self.fc1_adv = nn.Linear(in_features=256, out_features=128)
+        self.fc1_val = nn.Linear(in_features=256, out_features=128)
 
-        self.fc2_adv = nn.Linear(in_features=512, out_features=num_actions)
-        self.fc2_val = nn.Linear(in_features=512, out_features=1)
+        self.fc2_adv = nn.Linear(in_features=128, out_features=num_actions)
+        self.fc2_val = nn.Linear(in_features=128, out_features=1)
 
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        batch_size = x.size(0)
         x = self.relu(self.conv1(x))
         x = self.relu(self.conv2(x))
         x = self.relu(self.conv3(x))
@@ -133,7 +132,7 @@ class Dueling_DQN(nn.Module):
 
 
 
-class DQN():
+class DQNAgent():
     def __init__(self,
                  # args,
                  # num_actions,
@@ -141,7 +140,7 @@ class DQN():
                  board_size,
                  # frame_width = 84,  # Resized frame width
                  # frame_height = 84,  # Resized frame height
-                 state_length = 1,  # Number of most recent frames to produce the input to the network
+                 state_length = 3,  # Number of most recent frames to produce the input to the network
                  anealing_steps = 1000000, # Number of steps over which the initial value of epsilon is linearly annealed to its final value
                  initial_epsilon = 1.0,  # Initial value of epsilon in epsilon-greedy
                  final_epsilon = 0.1,  # Final value of epsilon in epsilon-greedy
@@ -157,11 +156,16 @@ class DQN():
                  # initial_beta = 0.4,
                  ):
 
+        self.agent_name = 'vanilla-dqn_greedy_r-d64'
+        self.writer = SummaryWriter(log_dir="./log/{}".format(self.agent_name))
+
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
         self.env = None
-        self.prioritized = True
-        self.double = True
-        self.dueling = True
-        self.n_step = 3
+        self.prioritized = False
+        self.double = False
+        self.dueling = False
+        self.n_step = 1
 
         # self.env_name = args.env_name
         self.load = False #args.load
@@ -169,10 +173,10 @@ class DQN():
         self.save_network_path = save_network_path
         self.load_network_path = False #args.load_network_path
         self.initial_replay_size = 20000 #args.initial_replay_size
-        self.replay_memory_size = 500000 #args.replay_memory_size
-        self.gamma = 1 #args.gamma
+        self.replay_memory_size = 1000000 #args.replay_memory_size
+        self.gamma = 0.99 #args.gamma
         self.gamma_n = self.gamma ** self.n_step
-        gpu = 1
+        # gpu = 1
 
 
         self.agent_name = agent_name
@@ -220,10 +224,12 @@ class DQN():
         self.buffer = []
         self.R = 0
 
-        if gpu == 1:
-            self.device = 'cuda:{}'.format(gpu-1)
-        else:
-            self.device = 'cpu'
+        # if gpu == 1:
+        #     self.device = 'cuda:{}'.format(gpu-1)
+        # else:
+        #     self.device = 'cpu'
+
+
 
         # Dueling Network
         if self.dueling:
@@ -261,10 +267,17 @@ class DQN():
             idx = random.randrange(len(possible_moves))
             action = possible_moves[idx]
         else:
-            q = self.q_values(torch.from_numpy(state).unsqueeze(0).unsqueeze(0).float().to(self.device))
+            q = self.q_values(torch.from_numpy(state).unsqueeze(0).float().to(self.device))
             possible_q = q[0][possible_moves]
             idx = torch.argmax(possible_q)
             action = possible_moves[idx]
+
+        # if self.epsilon >= random.random() or self.t < self.initial_replay_size:
+        #     action = random.randrange(self.num_actions)
+        # else:
+        #     action = torch.argmax(
+        #         self.q_values(torch.from_numpy(state).unsqueeze(0).float().to(self.device))).cpu().numpy()
+        #     action = int(action)
 
         # Anneal epsilon linearly over time
         if self.epsilon > self.final_epsilon and self.t >= self.initial_replay_size:
@@ -275,7 +288,8 @@ class DQN():
     def run(self, state, action, reward, terminal, next_state):
         # Clip all positive rewards at 1 and all negative rewards at -1, leaving 0 rewards unchanged
         raw_reward = reward
-        reward = np.sign(reward)
+        # reward = np.sign(reward)
+        reward = reward / 64
 
         if (not self.prioritized) and len(self.memory) > self.replay_memory_size:
             self.memory.popleft()
@@ -344,7 +358,7 @@ class DQN():
                 self.target_q_values.load_state_dict(self.q_values.state_dict())
 
         self.total_reward += raw_reward
-        self.total_q_max += max(self.q_values(torch.from_numpy(state).float().unsqueeze(0).unsqueeze(0).to(self.device))[0])
+        self.total_q_max += max(self.q_values(torch.from_numpy(state).float().unsqueeze(0).to(self.device))[0])
         self.duration += 1
 
         if terminal:
@@ -356,11 +370,17 @@ class DQN():
             else:
                 mode = 'exploit'
 
+            avg_loss = float(self.total_loss / (self.duration / self.train_interval))
+            self.writer.add_scalar("loss", avg_loss, self.episode)
+            self.writer.add_scalar("reward", self.total_reward, self.episode)
+            self.writer.add_scalar("lr", self.optimizer.param_groups[0]['lr'], self.episode)
+            self.writer.add_scalar("max_q_avg", self.total_q_max, self.episode)
+            self.writer.add_scalar("epsilon", self.epsilon, self.episode)
 
             text = 'EPISODE: {0:6d} / TOTAL_STEPS: {1:8d} / STEPS: {2:5d} / EPSILON: {3:.5f} / TOTAL_REWARD: {4:3.0f} / MAX_Q_AVG: {5:2.4f} / AVG_LOSS: {6:.5f} / MODE: {7} / STEPS_PER_SECOND: {8:.1f}'.format(
                 self.episode + 1, self.t, self.duration, self.epsilon,
                 self.total_reward, self.total_q_max / float(self.duration),
-                float(self.total_loss / (self.duration / self.train_interval)), mode, self.duration/elapsed)
+                avg_loss, mode, self.duration/elapsed)
 
             print(text)
             with open(self.agent_name+'_output.txt','a') as f:
@@ -397,12 +417,13 @@ class DQN():
         else:
             minibatch = random.sample(self.memory, self.batch_size)
 
+
         for data in minibatch:
-            state_batch.append([data[0]])
+            state_batch.append(data[0])
             action_batch.append(data[1])
             reward_batch.append(data[2])
             #shape = (BATCH_SIZE, 4, 32, 32)
-            next_state_batch.append([data[3]])
+            next_state_batch.append(data[3])
             terminal_batch.append(data[4])
 
         state_batch = torch.from_numpy(np.float32(np.array(state_batch))).to(self.device)

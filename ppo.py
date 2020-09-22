@@ -4,6 +4,7 @@ from torch.distributions import Categorical
 import gym
 import torch.nn.functional as F
 import time
+from torch.utils.tensorboard import SummaryWriter
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -110,6 +111,7 @@ class PPO:
     def __init__(self,
                  agent_name,
                  board_size,
+                 state_channels = 3,
                  lr = 0.001,
                  betas = (0.9, 0.999),
                  gamma = 0.99,  # discount factor
@@ -123,7 +125,8 @@ class PPO:
         self.env = None
 
         # self.agent_name = agent_name
-        self.agent_name = 'ppo_lr1e-3_3conv_r-disk'
+        self.agent_name = 'ppo_rand_r-disk_3channels'
+        # self.agent_name = 'test'
         self.board_size = board_size
         self.num_action = board_size**2
         self.lr = lr
@@ -134,9 +137,9 @@ class PPO:
         self.update_timestep = update_timestep
         self.batch_size = batch_size
 
-        self.policy = ActorCritic(1, self.num_action).to(device)
+        self.policy = ActorCritic(state_channels, self.num_action).to(device)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
-        self.policy_old = ActorCritic(1, self.num_action).to(device)
+        self.policy_old = ActorCritic(state_channels, self.num_action).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
         self.MseLoss = nn.MSELoss()
@@ -149,6 +152,8 @@ class PPO:
         self.total_reward = 0
         self.duration = 0
         self.start = time.time()
+
+        self.writer = SummaryWriter(log_dir="./log/{}".format(self.agent_name))
 
     def reset(self, env):
         if hasattr(env, 'env'):
@@ -210,13 +215,13 @@ class PPO:
     def get_action(self, state):
         possible_moves = self.env.possible_moves
         state = torch.from_numpy(state).float().to(device)
-        action_probs = self.policy_old.get_action_probs(state[None][None])
+        action_probs = self.policy_old.get_action_probs(state[None])
         possible_action_probs = action_probs[0][possible_moves]
         dist = Categorical(possible_action_probs)
         idx = dist.sample()
         action = torch.tensor(possible_moves[idx])
         logprob = dist.log_prob(idx)
-        self.memory.states.append(state[None])
+        self.memory.states.append(state)
         self.memory.actions.append(action)
         self.memory.logprobs.append(logprob)
         return action
@@ -232,6 +237,10 @@ class PPO:
             self.memory.clear_memory()
 
         if done:
+            self.writer.add_scalar("loss", self.avg_loss, self.episode)
+            self.writer.add_scalar("reward", self.total_reward, self.episode)
+            self.writer.add_scalar("lr", self.optimizer.param_groups[0]['lr'], self.episode)
+
             elapsed = time.time() - self.start
             text = 'EPISODE: {0:6d} / TOTAL_STEPS: {1:8d} / STEPS: {2:5d} / TOTAL_REWARD: {3:3.0f} / AVG_LOSS: {4:.5f} / STEPS_PER_SECOND: {5:.1f}'.format(
                 self.episode + 1, self.timestep, self.duration, self.total_reward, self.avg_loss, self.duration / elapsed)
@@ -243,6 +252,8 @@ class PPO:
             print(text)
             with open(self.agent_name + '_output.txt', 'a') as f:
                 f.write(text + "\n")
+
+
 
 
 def main():
