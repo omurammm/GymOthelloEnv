@@ -40,6 +40,17 @@ class RandomPolicy(object):
         action = possible_moves[ix]
         return action
 
+def undo_state(state, player_turn):
+    print(player_turn, state[2][0][0])
+    assert int((player_turn+1) / 2) == int(state[2][0][0])
+    # black
+    if player_turn == -1:
+        obs = state[0] - state[1]
+    # white
+    else:
+        obs = state[1] - state[0]
+    return obs
+
 
 class GreedyPolicy(object):
     """Greed is good."""
@@ -54,6 +65,7 @@ class GreedyPolicy(object):
             self.env = env
 
     def get_action(self, obs):
+        # obs = undo_state(obs, self.env.player_turn)
         my_perspective = self.env.player_turn
         new_env = copy_env(self.env)
 
@@ -65,6 +77,7 @@ class GreedyPolicy(object):
             new_env.set_board_state(
                 board_state=obs, perspective=my_perspective)
             new_env.set_player_turn(my_perspective)
+            assert move in new_env.possible_moves
             new_env.step(move)
             white_disks, black_disks = new_env.count_disks()
             if my_perspective == WHITE_DISK:
