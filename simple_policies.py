@@ -41,7 +41,6 @@ class RandomPolicy(object):
         return action
 
 def undo_state(state, player_turn):
-    print(player_turn, state[2][0][0])
     assert int((player_turn+1) / 2) == int(state[2][0][0])
     # black
     if player_turn == -1:
