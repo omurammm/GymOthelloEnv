@@ -65,7 +65,7 @@ class GreedyPolicy(object):
             self.env = env
 
     def get_action(self, obs):
-        # obs = undo_state(obs, self.env.player_turn)
+        obs = undo_state(obs, self.env.player_turn)
         my_perspective = self.env.player_turn
         new_env = copy_env(self.env)
 
