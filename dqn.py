@@ -156,7 +156,7 @@ class DQNAgent():
                  # initial_beta = 0.4,
                  ):
 
-        self.agent_name = 'vanilla-dqn_greedy_r-d64'
+        self.agent_name = 'vanilla-dqn_greedy_r-disk_initrand-0'
         self.writer = SummaryWriter(log_dir="./log/{}".format(self.agent_name))
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

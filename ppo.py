@@ -5,6 +5,7 @@ import gym
 import torch.nn.functional as F
 import time
 from torch.utils.tensorboard import SummaryWriter
+import numpy as np
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -111,7 +112,7 @@ class PPO:
     def __init__(self,
                  agent_name,
                  board_size,
-                 state_channels = 3,
+                 state_channels = 4,
                  lr = 0.001,
                  betas = (0.9, 0.999),
                  gamma = 0.99,  # discount factor
@@ -124,8 +125,8 @@ class PPO:
         print('lr:', lr)
         self.env = None
 
-        # self.agent_name = agent_name
-        self.agent_name = 'ppo_rand_r-disk_3channels'
+        self.agent_name = agent_name
+        # self.agent_name = 'ppo_selfplay'
         # self.agent_name = 'test'
         self.board_size = board_size
         self.num_action = board_size**2
@@ -154,6 +155,19 @@ class PPO:
         self.start = time.time()
 
         self.writer = SummaryWriter(log_dir="./log/{}".format(self.agent_name))
+
+    def load(self, checkpoint):
+        self.policy.load_state_dict(checkpoint['model_state_dict'])
+        self.policy_old.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    def save(self, path, episode, loss):
+        torch.save({
+            'episode': episode,
+            'model_state_dict': self.policy_old.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'loss': loss,
+        }, path)
 
     def reset(self, env):
         if hasattr(env, 'env'):
@@ -217,13 +231,70 @@ class PPO:
         state = torch.from_numpy(state).float().to(device)
         action_probs = self.policy_old.get_action_probs(state[None])
         possible_action_probs = action_probs[0][possible_moves]
-        dist = Categorical(possible_action_probs)
-        idx = dist.sample()
-        action = torch.tensor(possible_moves[idx])
-        logprob = dist.log_prob(idx)
-        self.memory.states.append(state)
-        self.memory.actions.append(action)
-        self.memory.logprobs.append(logprob)
+
+        np_possible_action_probs = possible_action_probs.cpu().detach().numpy()
+        # np_possible_action_probs = np_possible_action_probs / np_possible_action_probs.sum()
+        np_possible_action_probs = np_possible_action_probs / (np_possible_action_probs.sum() + 1e-60)
+
+        try:
+            action = np.random.choice(possible_moves, p=np_possible_action_probs)
+        except:
+            print('moves', possible_moves)
+            print('action probs', action_probs)
+            print('possible action probs', possible_action_probs)
+            print('np possible action probs', np_possible_action_probs)
+            # raise ValueError
+            if np_possible_action_probs.sum() == 0 or np.isnan(np_possible_action_probs).any():
+                np_possible_action_probs = np.zeros(np_possible_action_probs.shape) + (1 / len(np_possible_action_probs))
+            else:
+                np_possible_action_probs = np_possible_action_probs / np_possible_action_probs.sum()
+            action = np.random.choice(possible_moves, p=np_possible_action_probs)
+
+        # dist = Categorical(possible_action_probs)
+        # idx = dist.sample()
+        # action = torch.tensor(possible_moves[idx])
+
+        # logprob = dist.log_prob(idx)
+        # self.memory.states.append(state)
+        # self.memory.actions.append(action)
+        # self.memory.logprobs.append(logprob)
+        return action
+
+    def get_test_action(self, state):
+        possible_moves = self.env.possible_moves
+        state = torch.from_numpy(state).float().to(device)
+        with torch.no_grad():
+            action_probs = self.policy_old.get_action_probs(state[None])
+        possible_action_probs = action_probs[0][possible_moves]
+
+        np_possible_action_probs = possible_action_probs.cpu().detach().numpy()
+        # np_possible_action_probs = np_possible_action_probs / np_possible_action_probs.sum()
+        np_possible_action_probs = np_possible_action_probs / (np_possible_action_probs.sum() + 1e-60)
+
+        # action = np.random.choice(possible_moves, p=np_possible_action_probs)
+        try:
+            action = np.random.choice(possible_moves, p=np_possible_action_probs)
+        except:
+            print('moves', possible_moves)
+            print('action probs', action_probs)
+            print('possible action probs', possible_action_probs)
+            print('np possible action probs', np_possible_action_probs)
+            # raise ValueError
+            if np_possible_action_probs.sum() == 0 or np.isnan(np_possible_action_probs).any():
+                np_possible_action_probs = np.zeros(np_possible_action_probs.shape) + (1 / len(np_possible_action_probs))
+            else:
+                np_possible_action_probs = np_possible_action_probs / np_possible_action_probs.sum()
+
+            action = np.random.choice(possible_moves, p=np_possible_action_probs)
+
+        # dist = Categorical(possible_action_probs)
+        # idx = dist.sample()
+        # action = torch.tensor(possible_moves[idx])
+
+        # logprob = dist.log_prob(idx)
+        # self.memory.states.append(state)
+        # self.memory.actions.append(action)
+        # self.memory.logprobs.append(logprob)
         return action
 
     def run(self, state, action, reward, done, next_state):
@@ -232,6 +303,15 @@ class PPO:
         self.memory.rewards.append(reward)
         self.memory.is_terminals.append(done)
         self.total_reward += reward
+
+        state = torch.from_numpy(state).float().to(device)
+        action = torch.as_tensor(action).to(device)
+        action_probs = self.policy_old.get_action_probs(state[None])
+        logprob = Categorical(action_probs).log_prob(action)
+        self.memory.states.append(state)
+        self.memory.actions.append(action)
+        self.memory.logprobs.append(logprob)
+        assert len(self.memory.rewards) == len(self.memory.states)
         if self.timestep % self.update_timestep == 0:
             self.avg_loss = self.update()
             self.memory.clear_memory()
@@ -242,7 +322,7 @@ class PPO:
             self.writer.add_scalar("lr", self.optimizer.param_groups[0]['lr'], self.episode)
 
             elapsed = time.time() - self.start
-            text = 'EPISODE: {0:6d} / TOTAL_STEPS: {1:8d} / STEPS: {2:5d} / TOTAL_REWARD: {3:3.0f} / AVG_LOSS: {4:.5f} / STEPS_PER_SECOND: {5:.1f}'.format(
+            text = 'EPISODE: {0:6d} / TOTAL_STEPS: {1:8d} / STEPS: {2:5d} / TOTAL_REWARD: {3:3.2f} / AVG_LOSS: {4:.5f} / STEPS_PER_SECOND: {5:.1f}'.format(
                 self.episode + 1, self.timestep, self.duration, self.total_reward, self.avg_loss, self.duration / elapsed)
             self.total_reward = 0
             self.duration = 0

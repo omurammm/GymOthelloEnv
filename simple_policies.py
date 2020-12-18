@@ -1,7 +1,7 @@
 """Simple policies for Othello."""
 
 import numpy as np
-
+from util import undo_state
 
 WHITE_DISK = 1
 BLACK_DISK = -1
@@ -40,15 +40,10 @@ class RandomPolicy(object):
         action = possible_moves[ix]
         return action
 
-def undo_state(state, player_turn):
-    assert int((player_turn+1) / 2) == int(state[2][0][0])
-    # black
-    if player_turn == -1:
-        obs = state[0] - state[1]
-    # white
-    else:
-        obs = state[1] - state[0]
-    return obs
+    def get_test_action(self, obs):
+        return self.get_action(obs)
+
+
 
 
 class GreedyPolicy(object):
@@ -87,6 +82,9 @@ class GreedyPolicy(object):
         new_env.close()
         ix = np.argmax(disk_cnts)
         return possible_moves[ix]
+
+    def get_test_action(self, obs):
+        return self.get_action(obs)
 
 
 class MaxiMinPolicy(object):
