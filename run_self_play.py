@@ -9,6 +9,7 @@ import numpy as np
 import copy
 import queue
 from util import make_state, create_policy, save, load
+import os
 
 
 def action(color, p_color, state, policy):
@@ -23,7 +24,7 @@ def play(protagonist,
          protagonist_agent_type='greedy',
          opponent_agent_type='rand',
          board_size=8,
-         num_rounds=100,
+         num_rounds=300000,
          protagonist_search_depth=1,
          opponent_search_depth=1,
          rand_seed=0,
@@ -281,8 +282,10 @@ def play(protagonist,
                 env.initial_rand_steps = env_init_rand_steps
 
         if i % save_interval == 0:
-            save_path = '/data/unagi0/omura/othello/selfplay/{}_{}.pth'.format(agent_name, i)
-            # save_path = 'data/selfplay/{}_{}.pth'.format(agent_name, i)
+            if os.path.exists('/data/unagi0/omura'):
+                save_path = '/data/unagi0/omura/othello/selfplay/{}_{}.pth'.format(agent_name, i)
+            else:
+                save_path = 'data/selfplay/{}_{}.pth'.format(agent_name, i)
             save(i, protagonist_policy, 0, save_path)
     env.close()
 
@@ -290,21 +293,21 @@ def play(protagonist,
 if __name__ == '__main__':
     # Parse command line arguments.
     parser = argparse.ArgumentParser()
-    parser.add_argument('--protagonist', default='rand',
+    parser.add_argument('--protagonist', default='rainbow',
                         choices=['rand', 'greedy', 'maximin', 'human', 'dqn', 'ppo', 'rainbow'])
     parser.add_argument('--opponent', default='rand',
                         choices=['rand', 'greedy', 'maximin', 'human', 'dqn', 'ppo', 'rainbow'])
     parser.add_argument('--protagonist-plays-white', default=False,
                         action='store_true')
-    parser.add_argument('--num-disk-as-reward', default=False,
+    parser.add_argument('--num-disk-as-reward', default=True,
                         action='store_true')
     parser.add_argument('--board-size', default=8, type=int)
     parser.add_argument('--protagonist-search-depth', default=1, type=int)
     parser.add_argument('--opponent-search-depth', default=1, type=int)
     parser.add_argument('--rand-seed', default=0, type=int)
-    parser.add_argument('--num-rounds', default=100, type=int)
+    parser.add_argument('--num-rounds', default=400000, type=int)
     parser.add_argument('--init-rand-steps', default=0, type=int)
-    parser.add_argument('--no-render', default=False, action='store_true')
+    parser.add_argument('--no-render', default=True, action='store_true')
     args, _ = parser.parse_known_args()
 
     # Run test plays.

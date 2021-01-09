@@ -21,7 +21,7 @@ def play(teacher,
          student_agent_type='rainbow',
          opponent_agent_type='',
          board_size=8,
-         num_rounds=100,
+         num_rounds=400000,
          teacher_search_depth=1,
          student_search_depth=1,
          opponent_search_depth=1,
@@ -388,7 +388,7 @@ if __name__ == '__main__':
     parser.add_argument('--student-search-depth', default=1, type=int)
     parser.add_argument('--opponent-search-depth', default=1, type=int)
     parser.add_argument('--rand-seed', default=0, type=int)
-    parser.add_argument('--num-rounds', default=100, type=int)
+    parser.add_argument('--num-rounds', default=400000, type=int)
     parser.add_argument('--init-rand-steps', default=0, type=int)
     parser.add_argument('--no-render', default=False, action='store_true')
     args, _ = parser.parse_known_args()

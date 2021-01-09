@@ -7,6 +7,10 @@ from pytorch_a2c_ppo_acktr_gail.a2c_ppo_acktr.distributions import Bernoulli, Ca
 from pytorch_a2c_ppo_acktr_gail.a2c_ppo_acktr.utils import init
 from pytorch_a2c_ppo_acktr_gail.a2c_ppo_acktr.distributions import FixedCategorical
 
+
+thresh = 1e-12
+
+
 class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.size(0), -1)
@@ -38,6 +42,8 @@ class Policy(nn.Module):
             self.dist = Bernoulli(self.base.output_size, num_outputs)
         else:
             raise NotImplementedError
+        self.i = 0
+        self.e = 0
 
     @property
     def is_recurrent(self):
@@ -57,6 +63,9 @@ class Policy(nn.Module):
         x = self.dist.linear(actor_features)
         # print(x[possible_moves])
         actions = []
+        self.i += 1
+        # if self.i % 100 == 0:
+        #     print(x[0])
         for i, tensor in enumerate(x):
             # print(dist, x)
             possible_tensor = tensor[possible_moves[i]]
@@ -67,18 +76,35 @@ class Policy(nn.Module):
                 if deterministic:
                     idx = dist_.mode()
                 else:
-                    idx = dist_.sample()
+                    try:
+                        idx = dist_.sample()
+                    except:
+                        print(possible_tensor, dist_.probs)
+                        print(dist_)
+                        raise ValueError
                 action = possible_moves[i][idx]
             actions.append([action])
 
-        action = torch.Tensor(actions)
+        action = torch.LongTensor(actions).to(torch.device(value.device))
+        # print(action, dist.probs)
+        action_log_probs = dist.log_probs(action)
+        with torch.no_grad():
+            probs = dist.probs[range(len(dist.probs)), action.squeeze()]
+            probs[probs <= thresh] = 0
+            probs[probs > thresh] = 1
+        action_log_probs = action_log_probs.squeeze() * probs
+        action_log_probs = action_log_probs.unsqueeze(1)
+
+        ## w/o possible moves
+        # value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
+        # dist = self.dist(actor_features)
         #
         # if deterministic:
         #     action = dist.mode()
         # else:
         #     action = dist.sample()
-
-        action_log_probs = dist.log_probs(action)
+        #
+        # action_log_probs = dist.log_probs(action)
         # dist_entropy = dist.entropy().mean()
 
         return value, action, action_log_probs, rnn_hxs
@@ -92,6 +118,17 @@ class Policy(nn.Module):
         dist = self.dist(actor_features)
 
         action_log_probs = dist.log_probs(action)
+        with torch.no_grad():
+            probs = dist.probs[range(len(dist.probs)), action.squeeze()]
+            probs[probs <= thresh] = 0
+            probs[probs > thresh] = 1
+        action_log_probs = action_log_probs.squeeze() * probs
+        # action_log_probs[action_log_probs == 0] = -4
+        action_log_probs = action_log_probs.unsqueeze(1)
+        self.e += 1
+        if self.e % 100 == 0:
+            print('## probs', dist.probs[0])
+            print('## log probs', action_log_probs.squeeze())
         dist_entropy = dist.entropy().mean()
 
         return value, action_log_probs, dist_entropy, rnn_hxs

@@ -2,7 +2,7 @@
 
 import gym
 from gym import spaces
-from gym.envs.classic_control import rendering
+# from gym.envs.classic_control import rendering
 import pyglet
 from pyglet import gl
 import numpy as np
@@ -66,14 +66,16 @@ class SimpleOthelloEnv(gym.Env):
         return obs
 
     def step(self, action):
+        player_turn = self.env.player_turn
         if self.rand_step_cnt < self.max_rand_steps:
             ix = self.rnd.randint(0, len(self.possible_moves))
             action = self.possible_moves[ix]
             self.rand_step_cnt += 1
 
         obs, reward, done, _ = self.env.step(action)  # My move.
-        if self.render_in_step:# and player_turn == self.protagonist:
+        if self.render_in_step:
             self.render()
+
         return obs, reward, done, None
 
     def render(self, mode='human', close=False):
@@ -509,6 +511,7 @@ class OthelloBaseEnv(gym.Env):
     def show_gui_board(self):
         if self.viewer is None:
             self.viewer = rendering.Viewer(WINDOW_W, WINDOW_H)
+
         win = self.viewer.window
         win.switch_to()
         win.dispatch_events()

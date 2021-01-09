@@ -1,7 +1,7 @@
 """Simple policies for Othello."""
 
 import numpy as np
-from util import undo_state
+
 
 WHITE_DISK = 1
 BLACK_DISK = -1
@@ -43,7 +43,15 @@ class RandomPolicy(object):
     def get_test_action(self, obs):
         return self.get_action(obs)
 
-
+def undo_state(state, player_turn):
+    assert int((player_turn+1) / 2) == int(state[2][0][0])
+    # black
+    if player_turn == -1:
+        obs = state[0] - state[1]
+    # white
+    else:
+        obs = state[1] - state[0]
+    return obs
 
 
 class GreedyPolicy(object):

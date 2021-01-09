@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
+import copy
 
 class PPO():
     def __init__(self,
@@ -60,10 +60,20 @@ class PPO():
 
                 ratio = torch.exp(action_log_probs -
                                   old_action_log_probs_batch)
+                with torch.no_grad():
+                    block = action_log_probs.detach().clone()
+                    block_old = old_action_log_probs_batch.detach().clone()
+                    block[block != 0] = 1
+                    block_old[block_old != 0] = 1
+                    block = block.squeeze()*block_old.squeeze()
+
                 surr1 = ratio * adv_targ
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_param,
                                     1.0 + self.clip_param) * adv_targ
-                action_loss = -torch.min(surr1, surr2).mean()
+                action_loss = (-torch.min(surr1, surr2).squeeze() * block).unsqueeze(1)
+                action_loss = action_loss.mean()
+
+                # action_loss = -torch.min(surr1, surr2).mean()
 
                 if self.use_clipped_value_loss:
                     value_pred_clipped = value_preds_batch + \
