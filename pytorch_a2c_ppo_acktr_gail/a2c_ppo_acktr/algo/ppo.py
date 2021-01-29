@@ -42,8 +42,8 @@ class PPO():
 
         for e in range(self.ppo_epoch):
             if self.actor_critic.is_recurrent:
-                data_generator = rollouts.recurrent_generator(
-                    advantages, self.num_mini_batch)
+                raise ValueError('Not available with possible actions now.')
+                data_generator = rollouts.recurrent_generator(advantages, self.num_mini_batch)
             else:
                 data_generator = rollouts.feed_forward_generator(
                     advantages, self.num_mini_batch)
@@ -51,29 +51,33 @@ class PPO():
             for sample in data_generator:
                 obs_batch, recurrent_hidden_states_batch, actions_batch, \
                    value_preds_batch, return_batch, masks_batch, old_action_log_probs_batch, \
-                        adv_targ = sample
+                        adv_targ, choices_batch = sample
 
                 # Reshape to do in a single forward pass for all steps
                 values, action_log_probs, dist_entropy, _ = self.actor_critic.evaluate_actions(
                     obs_batch, recurrent_hidden_states_batch, masks_batch,
-                    actions_batch)
+                    actions_batch, choices_batch)
 
                 ratio = torch.exp(action_log_probs -
                                   old_action_log_probs_batch)
-                with torch.no_grad():
-                    block = action_log_probs.detach().clone()
-                    block_old = old_action_log_probs_batch.detach().clone()
-                    block[block != 0] = 1
-                    block_old[block_old != 0] = 1
-                    block = block.squeeze()*block_old.squeeze()
+                # print(action_log_probs.squeeze())
+                # print(old_action_log_probs_batch.squeeze())
+                # print(ratio.squeeze())
+                # print()
+                # with torch.no_grad():
+                #     block = action_log_probs.detach().clone()
+                #     block_old = old_action_log_probs_batch.detach().clone()
+                #     block[block != 0] = 1
+                #     block_old[block_old != 0] = 1
+                #     block = block.squeeze()*block_old.squeeze()
 
                 surr1 = ratio * adv_targ
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_param,
                                     1.0 + self.clip_param) * adv_targ
-                action_loss = (-torch.min(surr1, surr2).squeeze() * block).unsqueeze(1)
-                action_loss = action_loss.mean()
-
-                # action_loss = -torch.min(surr1, surr2).mean()
+                # action_loss = (-torch.min(surr1, surr2).squeeze() * block).unsqueeze(1)
+                # action_loss = action_loss.mean()
+                #
+                action_loss = -torch.min(surr1, surr2).mean()
 
                 if self.use_clipped_value_loss:
                     value_pred_clipped = value_preds_batch + \

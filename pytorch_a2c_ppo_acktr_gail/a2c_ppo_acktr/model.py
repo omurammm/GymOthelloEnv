@@ -8,7 +8,7 @@ from pytorch_a2c_ppo_acktr_gail.a2c_ppo_acktr.utils import init
 from pytorch_a2c_ppo_acktr_gail.a2c_ppo_acktr.distributions import FixedCategorical
 
 
-thresh = 1e-12
+thresh = 1e-10
 
 
 class Flatten(nn.Module):
@@ -58,20 +58,20 @@ class Policy(nn.Module):
         raise NotImplementedError
 
     def act(self, inputs, rnn_hxs, masks, possible_moves, deterministic=False):
+        ### action prob in possible moves
         value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
         dist = self.dist(actor_features)
         x = self.dist.linear(actor_features)
-        # print(x[possible_moves])
         actions = []
+        action_log_probs = []
         self.i += 1
-        # if self.i % 100 == 0:
-        #     print(x[0])
         for i, tensor in enumerate(x):
-            # print(dist, x)
             possible_tensor = tensor[possible_moves[i]]
             dist_ = FixedCategorical(logits=possible_tensor)
             if len(possible_tensor) == 0:
                 action = 0
+                action_log_prob = torch.tensor(0.0)
+                # action_log_prob = torch.tensor(-2.0)
             else:
                 if deterministic:
                     idx = dist_.mode()
@@ -83,17 +83,57 @@ class Policy(nn.Module):
                         print(dist_)
                         raise ValueError
                 action = possible_moves[i][idx]
+                action_log_prob = dist_.log_probs(torch.LongTensor([idx]))
+                # if len(possible_tensor) == 1:
+                #     action_log_prob = torch.tensor(-2.0)
             actions.append([action])
+            action_log_probs.append(action_log_prob)
 
         action = torch.LongTensor(actions).to(torch.device(value.device))
-        # print(action, dist.probs)
-        action_log_probs = dist.log_probs(action)
-        with torch.no_grad():
-            probs = dist.probs[range(len(dist.probs)), action.squeeze()]
-            probs[probs <= thresh] = 0
-            probs[probs > thresh] = 1
-        action_log_probs = action_log_probs.squeeze() * probs
-        action_log_probs = action_log_probs.unsqueeze(1)
+        action_log_probs = torch.Tensor(action_log_probs).to(torch.device(value.device))
+        if self.i % 480 == 0:
+            print()
+            print('logits, probs')
+            print(x[0], dist.probs[0])
+
+
+
+        ##### action prob among whole actions
+        # value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
+        # dist = self.dist(actor_features)
+        # x = self.dist.linear(actor_features)
+        # actions = []
+        # self.i += 1
+        # for i, tensor in enumerate(x):
+        #     possible_tensor = tensor[possible_moves[i]]
+        #     dist_ = FixedCategorical(logits=possible_tensor)
+        #     if len(possible_tensor) == 0:
+        #         action = 0
+        #     else:
+        #         if deterministic:
+        #             idx = dist_.mode()
+        #         else:
+        #             try:
+        #                 idx = dist_.sample()
+        #             except:
+        #                 print(possible_tensor, dist_.probs)
+        #                 print(dist_)
+        #                 raise ValueError
+        #         action = possible_moves[i][idx]
+        #     actions.append([action])
+        #
+        # action = torch.LongTensor(actions).to(torch.device(value.device))
+        # # print(action, dist.probs)
+        # action_log_probs = dist.log_probs(action)
+        # with torch.no_grad():
+        #     probs = dist.probs[range(len(dist.probs)), action.squeeze()]
+        #     probs[probs <= thresh] = 0
+        #     probs[probs > thresh] = 1
+        # action_log_probs = action_log_probs.squeeze() * probs
+        # action_log_probs = action_log_probs.unsqueeze(1)
+        # if self.i % 120 == 0:
+        #     print('##', x[0], dist.probs[0])
+
 
         ## w/o possible moves
         # value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
@@ -113,23 +153,47 @@ class Policy(nn.Module):
         value, _, _ = self.base(inputs, rnn_hxs, masks)
         return value
 
-    def evaluate_actions(self, inputs, rnn_hxs, masks, action):
+    def evaluate_actions(self, inputs, rnn_hxs, masks, action, choices):
+        ##### action prob in possible moves
         value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
         dist = self.dist(actor_features)
 
-        action_log_probs = dist.log_probs(action)
-        with torch.no_grad():
-            probs = dist.probs[range(len(dist.probs)), action.squeeze()]
-            probs[probs <= thresh] = 0
-            probs[probs > thresh] = 1
-        action_log_probs = action_log_probs.squeeze() * probs
-        # action_log_probs[action_log_probs == 0] = -4
-        action_log_probs = action_log_probs.unsqueeze(1)
+        x = self.dist.linear(actor_features)
+        action_log_probs = []
+        # self.i += 1
+        for i, tensor in enumerate(x):
+            possible_tensor = tensor[choices[i]]
+            dist_ = FixedCategorical(logits=possible_tensor)
+            if len(possible_tensor) == 0 or action[i][0] not in choices[i]:
+                action_log_prob = torch.tensor([[0.0]])
+            else:
+                idx = choices[i].index(action[i][0])
+                action_log_prob = dist_.log_probs(torch.LongTensor([idx]))
+            action_log_probs.append(action_log_prob)
+        action_log_probs = torch.cat(tuple(action_log_probs)).to(torch.device(value.device))
         self.e += 1
         if self.e % 100 == 0:
             print('## probs', dist.probs[0])
             print('## log probs', action_log_probs.squeeze())
         dist_entropy = dist.entropy().mean()
+
+        ##### action prob in whole
+        # value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
+        # dist = self.dist(actor_features)
+        #
+        # action_log_probs = dist.log_probs(action)
+        # with torch.no_grad():
+        #     probs = dist.probs[range(len(dist.probs)), action.squeeze()]
+        #     probs[probs <= thresh] = 0
+        #     probs[probs > thresh] = 1
+        # action_log_probs = action_log_probs.squeeze() * probs
+        # # action_log_probs[action_log_probs == 0] = -4
+        # action_log_probs = action_log_probs.unsqueeze(1)
+        # self.e += 1
+        # if self.e % 100 == 0:
+        #     print('## probs', dist.probs[0])
+        #     print('## log probs', action_log_probs.squeeze())
+        # dist_entropy = dist.entropy().mean()
 
         return value, action_log_probs, dist_entropy, rnn_hxs
 

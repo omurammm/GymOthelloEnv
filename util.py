@@ -1,7 +1,7 @@
 import numpy as np
 import copy
 import torch
-from dqn import DQNAgent as DQN
+# from dqn import DQNAgent as DQN
 from ppo import PPO
 from Rainbow.agent import Agent as Rainbow
 
@@ -25,7 +25,7 @@ def load(policy, path):
     return episode, loss
 
 
-def create_policy(policy_type='rand', board_size=8, seed=0, search_depth=1, agent_name=''):
+def create_policy(policy_type='rand', board_size=8, seed=0, search_depth=1, agent_name='', device=None):
     import simple_policies
     if policy_type == 'rand':
         policy = simple_policies.RandomPolicy(seed=seed)
@@ -35,12 +35,12 @@ def create_policy(policy_type='rand', board_size=8, seed=0, search_depth=1, agen
         policy = simple_policies.MaxiMinPolicy(search_depth)
     elif policy_type == 'human':
         policy = simple_policies.HumanPolicy(board_size)
-    elif policy_type == 'dqn':
-        policy = DQN(agent_name, board_size)
+    # elif policy_type == 'dqn':
+    #     policy = DQN(agent_name, board_size)
     elif policy_type == 'ppo':
         policy = PPO(agent_name, board_size)
     elif policy_type == 'rainbow':
-        policy = Rainbow(agent_name, board_size)
+        policy = Rainbow(agent_name, board_size, device)
 
     return policy
 
