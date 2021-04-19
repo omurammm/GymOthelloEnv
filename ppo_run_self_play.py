@@ -59,7 +59,7 @@ def test(protagonist,
     args = get_args()
     args.algo = 'ppo'
     args.use_gae = True
-    args.lr = 5e-5 #2.5e-4
+    args.lr = 1e-5 #2.5e-4
     args.clip_param = 0.2
     args.value_loss_coef = 0.5 #0.5
     args.num_processes = 8
@@ -304,11 +304,11 @@ def subproc_worker(id, env, pipe, parent_pipe):
 
                 if done_b:
                     if pcolor == 'black':
-                        pipe.send((state_b, action_b, reward_b, done_b, {'type': None, 'choices': env.possible_moves}, output_b))
+                        pipe.send((state_b, action_b, reward_b, done_b, {'type': None, 'choices': choice_b}, output_b))
                         cmd = pipe.recv()[0]
                         assert cmd == 'step'
                     if pcolor == 'white' and init:
-                        pipe.send((o, 0, 0, done_b, {'type': None, 'choices': env.possible_moves}, dummy_outputs))
+                        pipe.send((o, 0, 0, done_b, {'type': None, 'choices': []}, dummy_outputs))
                         cmd = pipe.recv()[0]
                         assert cmd == 'step'
                     break
@@ -445,7 +445,7 @@ if __name__ == '__main__':
                         choices=['rand', 'greedy', 'maximin', 'human', 'dqn', 'ppo', 'rainbow'])
     parser.add_argument('--protagonist-plays-white', default=False,
                         action='store_true')
-    parser.add_argument('--num-disk-as-reward', default=False,
+    parser.add_argument('--num-disk-as-reward', default=True,
                         action='store_true')
     parser.add_argument('--board-size', default=8, type=int)
     parser.add_argument('--protagonist-search-depth', default=1, type=int)
