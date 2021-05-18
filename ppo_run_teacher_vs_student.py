@@ -51,12 +51,14 @@ def test(protagonist,
          test_init_rand_steps=10,
          render=False,
          train_teacher=True,
+         teacher_test_interval=2000,
          test_interval=10,
          num_test_games=200,
          save_interval=500,
          # load_path='data/selfplay/ent0_lr1e-5_35000.pth'):
          # load_path='/data/unagi0/omura/othello/selfplay/ent0_lr1e-5_35000.pth'):
-         load_path = '/data/unagi0/omura/othello/teacher_student/testinterval10_ent0_lr5e-6_clip1e-1_numstep64_teacher_10000.pth'):
+         load_path='/data/unagi0/omura/othello/selfplay/ent0_lr1e-5_numstep64_45000.pth'):
+         # load_path = '/data/unagi0/omura/othello/teacher_student/testinterval10_ent0_lr5e-6_clip1e-1_numstep64_teacher_10000.pth'):
 
     args = get_args()
     args.algo = 'ppo'
@@ -92,11 +94,11 @@ def test(protagonist,
     # device = torch.device("cuda:0" if args.cuda else "cpu")
     device = torch.device("cpu")
 
-    # agent_name = 'ppo_selfplay_8proc_th1e-10_ent1e-2'
-    # agent_name = 'wo_ttrain_ent0_lr5e-6_clip1e-1_numstep64'
-    # agent_name = 'testinterval10_ent0_lr5e-6_clip1e-1_numstep64'
+    # agent_name = 'wo_ttrain_ent0_lr5e-6_clip1e-1_numstep64_3rd'
+    # agent_name = 'testinterval1_ent0_lr5e-6_clip1e-1_numstep64_2nd'
+    agent_name = 'testinterval10_ent0_lr5e-6_clip1e-1_numstep64_3rd'
     # agent_name = 'trained1_10k_wo_ttrain_ent0_lr5e-6_clip1e-1_numstep64'
-    agent_name = 'trained1_10k_testinterval10_ent0_lr5e-6_clip1e-1_numstep64'
+    # agent_name = 'trained1_10k_testinterval10_ent0_lr5e-6_clip1e-1_numstep64'
     # agent_name = 'test'
     writer = SummaryWriter(log_dir="./log/ppo_teacher_vs_student/{}".format(agent_name))
 
@@ -362,7 +364,6 @@ def test(protagonist,
             # over = all(done_ts[0]) and all(done_ts[1])
             # over = all(np.array(done_ts[0])+np.array(done_ts[1]))
 
-
         if episode % test_interval == 0:
             print('Test')
             games_rand, wins_rand = envs.test('rand', num_test_games, rollouts_student.recurrent_hidden_states[0])
@@ -374,6 +375,19 @@ def test(protagonist,
             last_win_avg = copy.deepcopy(win_avg)
             win_avg['rand'] = wins_rand / games_rand
             win_avg['greedy'] = wins_greedy / games_greedy
+
+        if episode % teacher_test_interval == 0:
+            print('Test teacher')
+            games_rand, wins_rand = envs.test('rand', num_test_games, rollouts_teacher.recurrent_hidden_states[0], teacher=True)
+            writer.add_scalar("win avg teacher({})".format('rand'), wins_rand/games_rand, episode)
+            print('### vs-random winning% {}/{}={}'.format(wins_rand, games_rand, wins_rand / games_rand))
+            games_greedy, wins_greedy = envs.test('greedy', num_test_games, rollouts_teacher.recurrent_hidden_states[0], teacher=True)
+            writer.add_scalar("win avg teacher({})".format('greedy'), wins_greedy/games_greedy, episode)
+            print('### vs-greedy winning% {}/{}={}'.format(wins_greedy, games_greedy, wins_greedy/games_greedy))
+            last_win_avg = copy.deepcopy(win_avg)
+            win_avg['rand'] = wins_rand / games_rand
+            win_avg['greedy'] = wins_greedy / games_greedy
+
         if episode % save_interval == 0:
             if os.path.exists('/data/unagi0/omura'):
                 t_save_path = '/data/unagi0/omura/othello/teacher_student/{}_teacher_{}.pth'.format(agent_name, episode)

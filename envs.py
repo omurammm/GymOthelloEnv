@@ -150,7 +150,7 @@ class PPOTeacherStudentEnvs(Envs):
 
         return t_or_s, obs, actions, rewards, dones, infos, outputs, masks, bad_masks
 
-    def test(self, name, num_games, ex_hiddens):
+    def test(self, name, num_games, ex_hiddens, teacher=False):
         proc_num_games = num_games // len(self.parent_pipes)
         for pipe in self.parent_pipes:
             pipe.send(('test-'+name, proc_num_games))
@@ -170,7 +170,10 @@ class PPOTeacherStudentEnvs(Envs):
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in dones])
             choices = [info['choices'] for info in infos]
             with torch.no_grad():
-                v, next_actions, logprob, hidden = self.student_policy.act(obs, ex_hiddens, masks, choices)
+                if teacher:
+                    v, next_actions, logprob, hidden = self.teacher_policy.act(obs, ex_hiddens, masks, choices)
+                else:
+                    v, next_actions, logprob, hidden = self.student_policy.act(obs, ex_hiddens, masks, choices)
             # next_actions = random_possible_actions(infos)
             for i, info in enumerate(infos):
                 self.parent_pipes[i].send(('step', int(next_actions[i][0]), (v[i], logprob[i], hidden[i])))

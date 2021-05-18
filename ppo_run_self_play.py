@@ -39,14 +39,14 @@ from multiprocessing import set_start_method
 
 
 def test(protagonist,
-         protagonist_agent_type='greedy',
-         opponent_agent_type='rand',
-         board_size=8,
-         num_rounds=200000,
-         protagonist_search_depth=1,
-         opponent_search_depth=1,
-         rand_seed=0,
-         env_init_rand_steps=0,
+         protagonist_agent_type,
+         opponent_agent_type,
+         board_size,
+         num_rounds,
+         protagonist_search_depth,
+         opponent_search_depth,
+         rand_seed,
+         env_init_rand_steps,
          test_init_rand_steps=10,
          num_disk_as_reward=True,
          render=False,
@@ -60,10 +60,10 @@ def test(protagonist,
     args.algo = 'ppo'
     args.use_gae = True
     args.lr = 1e-5 #2.5e-4
-    args.clip_param = 0.2
+    args.clip_param = 0.1
     args.value_loss_coef = 0.5 #0.5
     args.num_processes = 8
-    args.num_steps = 8 #128
+    args.num_steps = 64 #128
     args.num_mini_batch = 4
     args.log_interval = 1
     args.use_linear_lr_decay = True
@@ -91,7 +91,9 @@ def test(protagonist,
     device = torch.device("cpu")
 
     # agent_name = 'ppo_selfplay_8proc_th1e-10_ent1e-2'
-    agent_name = 'ent0_lr1e-5_clip2e-1'
+    # agent_name = 'ent0_lr1e-5_clip2e-1'
+    agent_name = 'ent0_lr1e-5_numstep64'
+    # agent_name = 'test'
     writer = SummaryWriter(log_dir="./log/ppo_selfplay/{}".format(agent_name))
 
     envs_list = []
@@ -150,6 +152,7 @@ def test(protagonist,
 
     # episode_rewards = deque(maxlen=10)
     u = 0
+    step = 0
     for episode in range(num_rounds):
         print()
         print('Episode %s' % episode)
@@ -161,48 +164,49 @@ def test(protagonist,
                 utils.update_linear_schedule(
                     agent.optimizer, u, num_updates,
                     agent.optimizer.lr if args.algo == "acktr" else args.lr)
-            u += 1
-            # print(rollouts.rewards.squeeze().squeeze())
-            for step in range(args.num_steps):
+            # for step in range(args.num_steps):
 
                 # Obser reward and next obs
-                if not over:
-                    obs, action, reward, done, infos, v_logprob_hidden, masks, bad_masks = envs.step(rollouts.recurrent_hidden_states[step])
-                    choices = [info['choices'] for info in infos]
-                    for i in range(len(action)):
-                        assert done[i] or action[i][0] in choices[i], (action[i][0], choices[i])
+            # if not over:
+            obs, action, reward, done, infos, v_logprob_hidden, masks, bad_masks = envs.step(rollouts.recurrent_hidden_states[step % args.num_steps])
+            choices = [info['choices'] for info in infos]
+            for i in range(len(action)):
+                assert done[i] or action[i][0] in choices[i], (action[i][0], choices[i])
                 # for info in infos:
                 #     if 'episode' in info.keys():
                 #         episode_rewards.append(info['episode']['r'])
 
-                if step == 0:
-                    rollouts.obs[0].copy_(obs)
-                    rollouts.masks[0].copy_(masks)
-                    rollouts.bad_masks[0].copy_(bad_masks)
-                else:
-                    rollouts.insert(obs, prev_hidden, prev_action,
-                                    prev_logprob, prev_value, prev_reward, masks, bad_masks, prev_choices)
+            if step == 0:
+                rollouts.obs[0].copy_(obs)
+                rollouts.masks[0].copy_(masks)
+                rollouts.bad_masks[0].copy_(bad_masks)
+            else:
+                rollouts.insert(obs, prev_hidden, prev_action,
+                                prev_logprob, prev_value, prev_reward, masks, bad_masks, prev_choices)
                 # prev_obs = obs
-                prev_action = action
-                prev_value = v_logprob_hidden[:, 0].unsqueeze(1)
-                prev_logprob = v_logprob_hidden[:, 1].unsqueeze(1)
-                prev_hidden = v_logprob_hidden[:, 2].unsqueeze(1)
-                prev_reward = reward
-                # prev_masks = masks
-                # prev_bad_masks = bad_masks
-                prev_choices = choices
-                over = all(done)
+            prev_action = action
+            prev_value = v_logprob_hidden[:, 0].unsqueeze(1)
+            prev_logprob = v_logprob_hidden[:, 1].unsqueeze(1)
+            prev_hidden = v_logprob_hidden[:, 2].unsqueeze(1)
+            prev_reward = reward
+            # prev_masks = masks
+            # prev_bad_masks = bad_masks
+            prev_choices = choices
+            over = all(done)
 
-            with torch.no_grad():
-                next_value = actor_critic.get_value(
-                    rollouts.obs[-1], rollouts.recurrent_hidden_states[-1],
-                    rollouts.masks[-1]).detach()
+            if (step % args.num_steps == 0) and (step != 0):
+                u += 1
+                with torch.no_grad():
+                    next_value = actor_critic.get_value(
+                        rollouts.obs[-1], rollouts.recurrent_hidden_states[-1],
+                        rollouts.masks[-1]).detach()
 
-            rollouts.compute_returns(next_value, args.use_gae, args.gamma,
-                                     args.gae_lambda, args.use_proper_time_limits)
+                rollouts.compute_returns(next_value, args.use_gae, args.gamma,
+                                         args.gae_lambda, args.use_proper_time_limits)
 
-            value_loss, action_loss, dist_entropy = agent.update(rollouts)
-            rollouts.after_update()
+                value_loss, action_loss, dist_entropy = agent.update(rollouts)
+                rollouts.after_update()
+            step += 1
 
         if episode % test_interval == 0:
             games, wins = envs.test('rand', num_test_games, rollouts.recurrent_hidden_states[0])
@@ -218,10 +222,11 @@ def test(protagonist,
                 save_path = 'data/selfplay/{}_{}.pth'.format(agent_name, episode)
             torch.save(actor_critic, save_path)
 
-        writer.add_scalar("value_loss", value_loss, episode)
-        writer.add_scalar("action_loss", action_loss, episode)
-        writer.add_scalar("dist_entropy", dist_entropy, episode)
-        print(value_loss, action_loss, dist_entropy)
+        if step > args.num_steps:
+            writer.add_scalar("value_loss", value_loss, episode)
+            writer.add_scalar("action_loss", action_loss, episode)
+            writer.add_scalar("dist_entropy", dist_entropy, episode)
+            print(value_loss, action_loss, dist_entropy)
 
     envs.over()
 
